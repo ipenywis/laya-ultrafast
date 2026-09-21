@@ -1,26 +1,34 @@
-"""Live Google Flights search. Calls TypeSafe; never selects or books a flight."""
+"""Live Google Flights search. Decides locally with Laya (or TypeSafe); never selects or books a flight."""
 
 import argparse
 import base64
+import datetime
 import json
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from jev_ultrafast import Agent
+from laya_ultrafast import Agent
 
 URL = "https://www.google.com/travel/flights?hl=en"
-GOALS = (
-    "Find one-way flights from Zurich to London on September 20, 2026, for one adult in economy. "
-    "Stop when matching flight options are visible. Do not select or book a flight."
-)
+RECORDED_DAY = datetime.date(2026, 9, 20)  # The date in the recorded demo and docs/performance.md.
 
 
-def verify(page):
+def goal(day):
+    return (
+        f"Find one-way flights from Zurich to London on {day:%B} {day.day}, {day.year}, for one adult in economy. "
+        "Stop when matching flight options are visible. Do not select or book a flight."
+    )
+
+
+GOALS = goal(RECORDED_DAY)
+
+
+def verify(page, day=RECORDED_DAY):
     """Independent checks on the resulting page, not the model's DONE answer."""
     parsed = urlparse(page["url"])
     encoded = parse_qs(parsed.query).get("tfs", [""])[0]
     try:
-        date_in_url = b"2026-09-20" in base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4))
+        date_in_url = day.isoformat().encode() in base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4))
     except ValueError:
         date_in_url = False
     actions = page["actions"]
@@ -31,9 +39,9 @@ def verify(page):
         "one_way": values.get("Change ticket type. One way") == "One way",
         "origin": values.get("Where from?") == "Zürich",
         "destination": values.get("Where to?") == "London",
-        "date": values.get("Departure") == "Sun, Sep 20",
-        "year": date_in_url or "departing 2026-09-20" in page["text"],
-        "results": bool(flights) and all("Sunday, September 20" in f for f in flights),
+        "date": values.get("Departure") == f"{day:%a, %b} {day.day}",
+        "year": date_in_url or f"departing {day.isoformat()}" in page["text"],
+        "results": bool(flights) and all(f"{day:%A, %B} {day.day}" in f for f in flights),
     }
     return {"passed": all(checks.values()), "checks": checks, "visible_flights": flights}
 
@@ -42,17 +50,21 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", default="artifacts/flights/latest")
     parser.add_argument("--keep-open", action="store_true")
+    parser.add_argument(
+        "--date", type=datetime.date.fromisoformat, default=datetime.date.today() + datetime.timedelta(days=30),
+        help="Departure date, YYYY-MM-DD. Google Flights only offers future dates; defaults to 30 days ahead.",
+    )
     args = parser.parse_args()
     folder = Path(args.output)
     folder.mkdir(parents=True, exist_ok=True)
-    agent = Agent(URL, GOALS)
+    agent = Agent(URL, goal(args.date))
     try:
         for state in agent.run():
             last = state["history"][-1] if state["history"] else {}
             print(state["elapsed_ms"], state["status"], last.get("action", ""), flush=True)
     finally:
         state = agent.snapshot()
-        state["verification"] = verify(state["page"])
+        state["verification"] = verify(state["page"], args.date)
         (folder / "state.json").write_text(json.dumps(state, indent=2))
         (folder / "session.json").write_text(
             json.dumps({"target": agent.browser.target, "session": agent.browser.session})

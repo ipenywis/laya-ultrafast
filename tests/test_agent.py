@@ -7,9 +7,9 @@ from unittest.mock import Mock
 
 import pytest
 
-from jev_ultrafast import agent as loop
-from jev_ultrafast import model
-from jev_ultrafast.browser import StalePage, browser_operation, fingerprint
+from laya_ultrafast import agent as loop
+from laya_ultrafast import model
+from laya_ultrafast.browser import StalePage, browser_operation, fingerprint
 
 
 def page():
@@ -228,7 +228,7 @@ def test_stale_observation_preserves_executed_action(runner):
 
 
 def test_observation_is_one_atomic_browser_read(monkeypatch):
-    import jev_ultrafast.browser as browser
+    import laya_ultrafast.browser as browser
 
     p = page()
     cdp = Mock(return_value={"result": {"value": p}})
@@ -240,7 +240,7 @@ def test_observation_is_one_atomic_browser_read(monkeypatch):
 
 
 def test_executor_rejects_a_stale_page_before_browser_input(monkeypatch):
-    import jev_ultrafast.browser as browser
+    import laya_ultrafast.browser as browser
 
     b = browser.Browser.__new__(browser.Browser)
     b.fresh = Mock(return_value=False)
@@ -253,7 +253,7 @@ def test_executor_rejects_a_stale_page_before_browser_input(monkeypatch):
 
 @pytest.mark.parametrize("response", [{"exceptionDetails": {}}, {"result": {}}])
 def test_interrupted_dropdown_mutation_cannot_be_retried_as_stale(monkeypatch, response):
-    import jev_ultrafast.browser as browser
+    import laya_ultrafast.browser as browser
 
     # A navigation can destroy the evaluation result after the change event already fired.
     if "exceptionDetails" in response:

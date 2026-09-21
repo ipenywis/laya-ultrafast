@@ -2,7 +2,7 @@
 
 import argparse
 
-from jev_ultrafast import Agent
+from laya_ultrafast import Agent
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--url", required=True)

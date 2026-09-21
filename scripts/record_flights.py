@@ -12,13 +12,13 @@ from browser_harness.helpers import drain_events
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from examples.flights import GOALS, URL, verify  # noqa: E402
-from jev_ultrafast import Agent  # noqa: E402
+from laya_ultrafast import Agent  # noqa: E402
 
 folder = Path(sys.argv[1] if len(sys.argv) > 1 else "artifacts/flights/recorded")
 folder.mkdir(parents=True, exist_ok=False)
 source_hashes = {
     p.name: hashlib.sha256(p.read_bytes()).hexdigest()
-    for p in (Path(__file__).resolve().parents[1] / "jev_ultrafast").iterdir()
+    for p in (Path(__file__).resolve().parents[1] / "laya_ultrafast").iterdir()
     if p.suffix in {".py", ".js"}
 }
 agent = Agent(URL, GOALS)

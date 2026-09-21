@@ -1,12 +1,44 @@
-<img src="docs/banner.svg" alt="Jev Ultrafast · Browser Use × TypeSafe" width="100%" />
+# Laya Ultrafast ⚡
 
-# Jev Ultrafast ⚡
-
-> [!IMPORTANT]
-> **The Browser Use Cloud waitlist is open.** Get early access to ultrafast browser agents in the cloud.
-> **[Join the waitlist →](https://browser-use.com/ultrafast?utm_source=github&utm_medium=readme&utm_campaign=jev-ultrafast)**
+A fork of [browser-use/jev-ultrafast](https://github.com/browser-use/jev-ultrafast) that makes decisions on your own Mac with open weights: free, and offline apart from the websites it browses and an optional text model.
 
 **A browser agent with a dynamic, indexed action space.**
+
+## Local mode: Laya (default)
+
+Decisions now run on your Mac with [Laya](https://github.com/mizorewww/laya-mlx), an open-weight typed-decision model on MLX: no decision API and no per-step cost. The text model (OpenRouter, or a local server such as Ollama) is called **once per task** to turn the goal into field values and a finish condition.
+
+Laya answers narrow questions well: which field sets "destination", whether `Tue, Oct 20` satisfies `October 20, 2026`, which suggestion matches "London". It does not reliably answer the open question "what should the browser do next?" (2 of 5 hand-made Flights steps in a direct Jev-style port). So [laya.py](laya_ultrafast/laya.py) composes narrow questions with rules that apply on any site:
+
+1. After typing or opening a control, choose from the options that appeared.
+2. Fill each requirement in the goal's order: map it to a field (Laya, asked both ways), check its value (plain code, then Laya), then type, select, or click.
+3. Submit typed forms, then open the item the goal names, or wait for results that name the requested values.
+
+Every target is still an observed element, the executor is unchanged, and there are no site-specific plans.
+
+```bash
+uv sync
+hf download aac6fef/laya-typed-decisions-mlx   # once; later runs are offline
+cp .env.example .env                            # add TEXT_MODEL_API_KEY, or point it at a local server
+uv run laya
+```
+
+Requires Apple Silicon and macOS 14+. Set `DECISION_MODEL=typesafe` to use the hosted Jev policy described below.
+
+Measured on an M1 Max with `inception/mercury-2.5` on OpenRouter as the text model. Timing includes the ~1–1.5 s planning call:
+
+| Task | Result | Time |
+| --- | --- | --- |
+| Google Flights, one way Zürich → London, verified by `examples/flights.py --date 2026-10-20` | 5/5 passed | 7.5–12.1 s |
+| Wikipedia: open the Gödel's incompleteness theorems article | 3/3 | 3.2–4.6 s |
+| Local hotel fixture: filters, search, open Casa Flora | 3/3 | 1.6–1.9 s |
+| Local reading-room fixture: open the matching article | 3/3 | ~1 s |
+
+An earlier version of the policy, run fully offline with `gemma4` in Ollama, passed the same tasks. Mercury returns malformed JSON on roughly 1 in 5 planning calls, so the planner retries up to 3 times.
+
+The median Laya decision takes 33 ms. These runs are a small, repeated set of tasks, not a general reliability benchmark.
+
+## Hosted mode: TypeSafe Jev
 
 Give it one goal. [TypeSafe's Jev](https://docs.typesafe.ai/introduction) picks an operation and an element. A small LLM writes text only when the operation is `TYPE_TEXT`.
 
@@ -14,7 +46,7 @@ Give it one goal. [TypeSafe's Jev](https://docs.typesafe.ai/introduction) picks 
 
 <a href="docs/demo.mp4"><img src="docs/demo.gif" alt="A real Google Flights search at 1× speed, with generated city names and dynamic operation/target decisions" width="100%" /></a>
 
-[Watch the MP4](docs/demo.mp4) · [Measurements](docs/performance.md) · [Read the loop](jev_ultrafast/agent.py)
+[Watch the MP4](docs/demo.mp4) · [Measurements](docs/performance.md) · [Read the loop](laya_ultrafast/agent.py)
 
 ## The action space
 
@@ -53,12 +85,11 @@ There are no site-specific action scripts or prepared field strings in the polic
 ## Try it
 
 ```bash
-git clone https://github.com/browser-use/jev-ultrafast.git
-cd jev-ultrafast
+cd laya-ultrafast
 uv sync
 cp .env.example .env
-# Add TYPESAFE_API_KEY and TEXT_MODEL_API_KEY.
-uv run jev
+# Add TEXT_MODEL_API_KEY. For hosted decisions also set DECISION_MODEL=typesafe and TYPESAFE_API_KEY.
+uv run laya
 ```
 
 Open **http://127.0.0.1:8766** and click **Start demo → Run automatically**. The inspector shows numbered elements, operation probabilities, target probabilities, and executed actions. **Choose next** pauses before execution.
@@ -70,11 +101,11 @@ Chrome connects through [Browser Harness](https://github.com/browser-use/browser
 ## Use the library
 
 ```python
-from jev_ultrafast import Agent
+from laya_ultrafast import Agent
 
 with Agent(
     "https://www.google.com/travel/flights?hl=en",
-    "Find one-way flights from Zurich to London on September 20, 2026, "
+    "Find one-way flights from Zurich to London on October 20, 2026, "
     "for one adult in economy. Stop when matching flight options are visible.",
 ) as agent:
     for state in agent.run():
@@ -89,7 +120,7 @@ uv run --env-file .env python examples/run.py \
   --goal 'Find and open the Wikipedia article about Gödel’s incompleteness theorems.'
 ```
 
-`uv run --env-file .env python examples/flights.py --keep-open` performs the flight search, checks the actual route/date/results, and saves its trace. It does not select or book a flight.
+`uv run --env-file .env python examples/flights.py --date 2026-10-20 --keep-open` performs the flight search, checks the actual route/date/results, and saves its trace. It does not select or book a flight.
 
 ## Why it moves
 
@@ -108,12 +139,12 @@ Every executed target is resolved from an observed node. The executor rechecks p
 
 | File | Job |
 | --- | --- |
-| [agent.py](jev_ultrafast/agent.py) | The complete loop and text-helper handoff |
-| [snapshot.js](jev_ultrafast/snapshot.js) | Atomic DOM snapshot, indexed controls, freshness guards |
-| [browser.py](jev_ultrafast/browser.py) | Browser connection, current geometry, execution |
-| [model.py](jev_ultrafast/model.py) | Dynamic operation/target heads and text generation |
-| [questions.py](jev_ultrafast/questions.py) | Model instructions |
-| [demo.py](jev_ultrafast/demo.py) | Local inspector |
+| [agent.py](laya_ultrafast/agent.py) | The complete loop and text-helper handoff |
+| [snapshot.js](laya_ultrafast/snapshot.js) | Atomic DOM snapshot, indexed controls, freshness guards |
+| [browser.py](laya_ultrafast/browser.py) | Browser connection, current geometry, execution |
+| [model.py](laya_ultrafast/model.py) | Dynamic operation/target heads and text generation |
+| [questions.py](laya_ultrafast/questions.py) | Model instructions |
+| [demo.py](laya_ultrafast/demo.py) | Local inspector |
 
 ## Evidence and limits
 
@@ -130,8 +161,8 @@ A `DONE` choice still requires independent outcome verification. The DOM reader 
 ```bash
 uv run ruff check .
 uv run pytest
-node --check jev_ultrafast/static/app.js
-node --check jev_ultrafast/snapshot.js
+node --check laya_ultrafast/static/app.js
+node --check laya_ultrafast/snapshot.js
 uv build
 ```
 

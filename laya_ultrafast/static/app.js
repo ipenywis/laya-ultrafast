@@ -4,7 +4,7 @@ let state = null,
   busy = false,
   automatic = false;
 const goals = {
-  flights: 'Find one-way flights from Zurich to London on September 20, 2026, for one adult in economy. Stop when matching flight options are visible. Do not select or book a flight.',
+  flights: 'Find one-way flights from Zurich to London on October 20, 2026, for one adult in economy. Stop when matching flight options are visible. Do not select or book a flight.',
   travel: 'Find a Design stay in Lisbon with Free cancellation and open Casa Flora.',
   research:
     "Open the article about using finite choices to control browser agents.",
@@ -69,6 +69,7 @@ async function perform(fn, label) {
 function render() {
   if (!state) return;
   $("helper").textContent = `Text helper · ${state.text_model}`;
+  $("decision-model").textContent = state.decision_model;
   $("plan").innerHTML = (state.plan || [])
     .map(
       (goal, i) =>

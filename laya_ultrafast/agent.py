@@ -1,10 +1,12 @@
 """The complete agent loop. Typed choices, observable state, bounded execution."""
 
 import base64
+import os
 import time
 from pathlib import Path
 
 from .browser import Browser, StalePage
+from .laya import LayaPolicy, laya
 from .model import action_space, choose, field_context, field_text
 from .questions import MAX_STEPS
 
@@ -16,6 +18,10 @@ class Agent:
             raise ValueError("Supply a task")
         plan = [task]
         self.pending_text = None
+        # Local Laya decisions by default; DECISION_MODEL=typesafe keeps the hosted Jev policy.
+        self.policy = LayaPolicy(task) if os.environ.get("DECISION_MODEL", "laya") == "laya" else None
+        if self.policy:
+            laya()  # Load and warm the local model before the task clock starts.
         self.browser = Browser(url)
         self.record_dir = Path(record_dir) if record_dir else None
         self.screenshots = screenshots or bool(record_dir)
@@ -74,7 +80,15 @@ class Agent:
                 raise ValueError("This run has stopped. Start a fresh demo.")
             if len(state["decisions"]) >= MAX_STEPS * 2:
                 raise ValueError("Reached the demo's model-call budget")
-            state["decision"] = choose(state["page"], state["goal"], state["history"])
+            policy = getattr(self, "policy", None)
+            if policy:
+                planned = policy.plan is not None
+                state["decision"] = policy.choose(state["page"], state["history"])
+                if not planned:
+                    state["goal_plan"] = policy.plan
+                    state["text_calls"].append({**policy.plan_meta, "field": "goal plan", "value": policy.plan})
+            else:
+                state["decision"] = choose(state["page"], state["goal"], state["history"])
             state["decisions"].append(
                 {
                     **state["decision"],
@@ -103,7 +117,10 @@ class Agent:
                 state["status"] = "blocked"
                 raise ValueError(f"Stopped at the {MAX_STEPS}-action demo budget")
             text, helper = None, None
-            if action["kind"] == "fill":
+            if action["kind"] == "fill" and decision.get("text") is not None:
+                # The goal plan already holds this value; no per-field text call.
+                text, helper = decision["text"], {"model": "goal plan", "latency_ms": 0}
+            elif action["kind"] == "fill":
                 if not state["browser"].fresh(page):
                     raise StalePage("Page changed before text generation. Choose again.")
                 context = field_context(state["goal"], action, page, state["history"])

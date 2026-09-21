@@ -1,14 +1,18 @@
 [project]
-name = "jev-ultrafast"
+name = "laya-ultrafast"
 version = "0.1.0"
-description = "A browser agent that chooses instead of generating."
+description = "A local browser agent that chooses instead of generating: open-weight Laya decisions on Apple Silicon."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"
-dependencies = ["browser-harness==0.1.13", "httpx[http2]>=0.28,<1"]
+dependencies = [
+    "browser-harness==0.1.13",
+    "httpx[http2]>=0.28,<1",
+    "laya-mlx>=0.1,<0.2",
+]
 
 [project.scripts]
-jev = "jev_ultrafast.demo:main"
+laya = "laya_ultrafast.demo:main"
 
 [build-system]
 requires = ["hatchling"]

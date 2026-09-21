@@ -1,13 +1,14 @@
-"""TypeSafe makes choices; an optional small OpenAI-compatible model writes field values."""
+"""TypeSafe decisions (optional cloud backend) and the OpenAI-compatible text model helpers."""
 
 import json
 import math
 import os
 import time
+from urllib.parse import urlparse
 
 import httpx
 
-from .questions import NEXT_ACTION, TARGET, TEXT_VALUE
+from .questions import GOAL_PLAN, NEXT_ACTION, TARGET, TEXT_VALUE
 
 CLIENT = httpx.Client(http2=True, timeout=25)
 
@@ -157,42 +158,82 @@ def field_context(goal, action, page, history):
     }
 
 
-def field_text(context):
-    key = os.environ.get("TEXT_MODEL_API_KEY")
-    if not key:
-        raise ValueError("TYPE_TEXT needs TEXT_MODEL_API_KEY; no text is hardcoded or guessed by the executor.")
+def local_endpoint(base):
+    return urlparse(base).hostname in {"localhost", "127.0.0.1", "::1"}
+
+
+def chat_json(system, context):
+    """One JSON-mode call to the OpenAI-compatible text model. Local servers need no key."""
     base = os.environ.get("TEXT_MODEL_BASE_URL", "https://api.deepseek.com/v1").rstrip("/")
+    key = os.environ.get("TEXT_MODEL_API_KEY")
+    if not key and not local_endpoint(base):
+        raise ValueError("The text model needs TEXT_MODEL_API_KEY; no text is hardcoded or guessed by the executor.")
     model = os.environ.get("TEXT_MODEL", "deepseek-chat")
-    reasoning = {"thinking": {"type": "disabled"}} if "api.deepseek.com/" in base else {"reasoning": {"effort": "low"}}
-    if os.environ.get("TEXT_MODEL_REASONING") == "none":
-        reasoning = {"reasoning": {"enabled": False}}
+    no_reasoning = os.environ.get("TEXT_MODEL_REASONING") == "none"
+    if local_endpoint(base):
+        # Ollama, LM Studio and mlx_lm speak the plain OpenAI dialect.
+        reasoning = {"reasoning_effort": "none"} if no_reasoning else {}
+    elif "api.deepseek.com/" in (base + "/"):
+        reasoning = {"thinking": {"type": "disabled"}}
+    else:
+        reasoning = {"reasoning": {"enabled": False}} if no_reasoning else {"reasoning": {"effort": "low"}}
     started = time.perf_counter()
     result = post_json(
         base + "/chat/completions",
-        key,
+        key or "local",
         {
             "model": model,
             "max_tokens": 1024,
+            "temperature": 0,
             "response_format": {"type": "json_object"},
             **reasoning,
-            "messages": [
-                {"role": "system", "content": TEXT_VALUE},
-                {
-                    "role": "user",
-                    "content": json.dumps(context),
-                },
-            ],
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": json.dumps(context)}],
         },
     )
-    try:
-        output = json.loads(result["choices"][0]["message"]["content"])
-        value = output["text"]
-        if set(output) != {"text"} or not isinstance(value, str) or not value.strip() or len(value) > 2000:
-            raise ValueError()
-    except (ValueError, KeyError, TypeError):
-        raise ValueError("Text helper returned no valid field value; nothing typed.") from None
-    return value, {
+    output = json.loads(result["choices"][0]["message"]["content"])
+    return output, {
         "model": model,
         "latency_ms": round((time.perf_counter() - started) * 1000),
         "usage": result.get("usage", {}),
     }
+
+
+def field_text(context):
+    try:
+        output, meta = chat_json(TEXT_VALUE, context)
+        value = output["text"]
+        if set(output) != {"text"} or not isinstance(value, str) or not value.strip() or len(value) > 2000:
+            raise ValueError()
+    except (ValueError, KeyError, TypeError) as error:
+        if "TEXT_MODEL_API_KEY" in str(error):
+            raise
+        raise ValueError("Text helper returned no valid field value; nothing typed.") from None
+    return value, meta
+
+
+def plan_goal(goal, fields=(), attempts=3):
+    """Once per task: the values the goal states, the item to open, and the visible finish condition.
+    `fields` are the observed field labels, so requirements can name the field that sets them. No site plan."""
+    context = {"goal": goal, "fields_on_page": list(fields)[:40]}
+    for attempt in range(attempts):
+        try:
+            return parse_plan(*chat_json(GOAL_PLAN, context))
+        except ValueError as error:
+            if "TEXT_MODEL_API_KEY" in str(error) or attempt == attempts - 1:
+                raise
+
+
+def parse_plan(output, meta):
+    try:
+        requirements = [
+            {"what": r["what"].strip(), "value": r["value"].strip()}
+            for r in output["requirements"]
+            if isinstance(r.get("what"), str) and isinstance(r.get("value"), str) and r["value"].strip()
+        ]
+        finish, item = output["finish"], output.get("open")
+        if not isinstance(finish, str) or not finish.strip() or len(requirements) > 12:
+            raise ValueError()
+        item = item.strip() if isinstance(item, str) and item.strip() else None
+    except (ValueError, KeyError, TypeError, AttributeError):
+        raise ValueError("Goal planner returned no valid plan; no action executed.") from None
+    return {"requirements": requirements, "open": item, "finish": finish.strip()}, meta

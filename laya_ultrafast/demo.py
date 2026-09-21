@@ -1,4 +1,4 @@
-"""Loopback-only inspector for the Jev browser agent."""
+"""Loopback-only inspector for the browser agent (local Laya or hosted Jev decisions)."""
 
 import atexit
 import json
@@ -10,6 +10,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from .agent import Agent
+from .laya import DEFAULT_MODEL
 from .questions import MAX_STEPS
 
 ROOT = Path(__file__).parent
@@ -31,7 +32,17 @@ def load_environment():
 
 def response_state():
     state = AGENT.snapshot() if AGENT else {"page": None, "status": "idle", "history": [], "decision": None}
-    return {**state, "text_model": os.environ.get("TEXT_MODEL", "deepseek-chat"), "max_steps": MAX_STEPS}
+    decision_model = (
+        os.environ.get("LAYA_MODEL", DEFAULT_MODEL).split("/")[-1]
+        if os.environ.get("DECISION_MODEL", "laya") == "laya"
+        else os.environ.get("TYPESAFE_MODEL", "jev-latest")
+    )
+    return {
+        **state,
+        "text_model": os.environ.get("TEXT_MODEL", "deepseek-chat"),
+        "decision_model": decision_model,
+        "max_steps": MAX_STEPS,
+    }
 
 
 def close_browser():
@@ -132,7 +143,7 @@ def main():
     load_environment()
     atexit.register(close_browser)
     server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
-    print(f"Jev Ultrafast: {ORIGIN}", flush=True)
+    print(f"Laya Ultrafast: {ORIGIN}", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

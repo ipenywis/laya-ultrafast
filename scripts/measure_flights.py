@@ -15,8 +15,8 @@ parser.add_argument("--output", required=True)
 args = parser.parse_args()
 source = Path(args.source).resolve()
 sys.path.insert(0, str(source))
-from jev_ultrafast import Agent  # noqa: E402
-from jev_ultrafast import browser as browser_module  # noqa: E402
+from laya_ultrafast import Agent  # noqa: E402
+from laya_ultrafast import browser as browser_module  # noqa: E402
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 from examples.flights import GOALS, URL, verify  # noqa: E402
@@ -25,7 +25,7 @@ folder = Path(args.output)
 folder.mkdir(parents=True, exist_ok=False)
 source_hashes = {
     p.name: hashlib.sha256(p.read_bytes()).hexdigest()
-    for p in (source / "jev_ultrafast").iterdir() if p.suffix in {".py", ".js"}
+    for p in (source / "laya_ultrafast").iterdir() if p.suffix in {".py", ".js"}
 }
 raw = browser_module.cdp
 calls = defaultdict(list)
