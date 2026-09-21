@@ -189,3 +189,16 @@ def test_flight_goal_uses_the_requested_date():
     from examples.flights import goal
 
     assert "October 20, 2026" in goal(datetime.date(2026, 10, 20))
+
+
+def test_skyscanner_verification_reads_the_search_url():
+    from examples.skyscanner import verify
+
+    day = datetime.date(2026, 10, 20)
+    good = {
+        "url": "https://www.skyscanner.net/transport/flights/zrh/lond/261020/?adultsv2=1&cabinclass=economy&rtn=0",
+        "text": "Best CHF 120 Cheapest CHF 98 Fastest",
+    }
+    assert verify(good, day)["passed"]
+    assert not verify(dict(good, url=good["url"].replace("261020", "261021")), day)["passed"]
+    assert not verify(dict(good, url="https://www.skyscanner.net/sttc/px/captcha-v2/index.html"), day)["passed"]

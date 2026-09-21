@@ -21,6 +21,15 @@
         n.nodeType===1 && n.getAttribute('aria-hidden')!=='true' ? name(n,seen) : '').join(' ').trim()) ||
       e.getAttribute('title') || e.getAttribute('placeholder') || '';
   };
+  // Sites sometimes name an input by its value; its description, name, id and placeholder say what it is for.
+  const hint = e => {
+    if (!['INPUT','TEXTAREA','SELECT'].includes(e.tagName)) return '';
+    const described=(e.getAttribute('aria-describedby')||'').split(/\s+/)
+      .map(id=>document.getElementById(id)?.textContent||'').join(' ');
+    const parts=[described,e.name,e.id,e.placeholder].map(s=>(s||'')
+      .replace(/([a-z])([A-Z])/g,'$1 $2').replace(/[-_]+/g,' ').replace(/\s+/g,' ').trim()).filter(Boolean);
+    return [...new Set(parts)].join(' · ').slice(0,100);
+  };
   const roles=['button','link','checkbox','radio','switch','tab','menuitem','menuitemradio',
     'option','gridcell','combobox','textbox','searchbox','spinbutton'];
   const selector='a[href],button,input,textarea,select,summary,[contenteditable="true"],'+
@@ -60,6 +69,8 @@
     if (rname==='gridcell' && e.querySelector('button,[role="button"]')) continue;
     const base={node:identity(e),role:rname,label:name(e)||rname,
       rect:{x:r.x,y:r.y,w:r.width,h:r.height}};
+    const purpose=hint(e);
+    if (purpose && purpose!==base.label) base.hint=purpose;
     for (const key of ['checked','selected','expanded']) {
       const value=e.getAttribute('aria-'+key);
       if (value!==null) base[key]=value;
@@ -77,6 +88,23 @@
         e.isContentEditable || rname==='combobox' ? e.innerText.trim() : '';
       actions.push({...base,kind:editable?'fill':'click',value});
       if (editable) actions.push({...base,kind:'click',value,label:'Open '+base.label});
+    }
+  }
+  // Open pickers sometimes list plain clickable items with no role (a trip-type menu of <li>s).
+  // Only inside dialogs, menus and listboxes: whole-page pointer scanning would flood the action list.
+  const seen=new Set(actions.map(a=>cache.nodes.get(a.node)));
+  const pickers='[role="dialog"],dialog[open],[aria-modal="true"],[role="menu"],[role="listbox"],[popover]';
+  for (const root of document.querySelectorAll(pickers)) {
+    if (!visible(root)) continue;
+    for (const e of root.querySelectorAll('*')) {
+      if (seen.has(e) || e.closest(selector) || e.querySelector(selector) || !visible(e)) continue;
+      if (getComputedStyle(e).cursor!=='pointer' || getComputedStyle(e.parentElement).cursor==='pointer') continue;
+      const text=e.innerText?.trim().replace(/\s+/g,' ');
+      const r=e.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2;
+      if (!text || text.length>80 || r.width<=0 || r.height<=0 || x<0 || y<0 || x>=innerWidth || y>=innerHeight) continue;
+      seen.add(e);
+      actions.push({node:identity(e),role:'option',label:text,rect:{x:r.x,y:r.y,w:r.width,h:r.height},
+        kind:'click',value:''});
     }
   }
   const words=[], walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);

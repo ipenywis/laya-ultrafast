@@ -18,6 +18,11 @@ PORT = int(os.environ.get("TYPESAFE_DEMO_PORT", "8766"))
 ORIGIN = f"http://127.0.0.1:{PORT}"
 TOKEN = secrets.token_urlsafe(32)
 LOCK = threading.Lock()
+# Real sites the inspector can start on. The goal text is the only task input; there are no per-site plans.
+WEB = {
+    "flights": "https://www.google.com/travel/flights?hl=en",
+    "skyscanner": "https://www.skyscanner.net/",
+}
 AGENT = None
 
 
@@ -56,16 +61,14 @@ def command(name, body):
     global AGENT
     if name == "reset":
         scenario = body.get("scenario", "flights")
-        if scenario not in {"travel", "research", "flights"}:
+        if scenario not in {"travel", "research", *WEB}:
             raise ValueError("Unknown demo scenario")
         goal = body.get("goal", "").strip()
         if not goal or len(goal) > 2000:
             raise ValueError("Enter 1–2,000 characters")
         close_browser()
         AGENT = Agent(
-            "https://www.google.com/travel/flights?hl=en"
-            if scenario == "flights"
-            else f"{ORIGIN}/fixture.html?scenario={scenario}",
+            WEB.get(scenario, f"{ORIGIN}/fixture.html?scenario={scenario}"),
             goal,
             screenshots=True,
             record_dir=Path.cwd() / "artifacts" / "frames" if body.get("record") else None,

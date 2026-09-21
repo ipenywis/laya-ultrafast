@@ -79,6 +79,7 @@ def observed(page):
                 "value": action.get("current_value", action.get("value", "")) or "",
                 "checked": action.get("checked"),
                 "expanded": action.get("expanded"),
+                "hint": action.get("hint", ""),
                 "actions": {},
                 "options": [],
             }
@@ -103,8 +104,20 @@ def is_field(e):
     return e["role"] in FIELD_ROLES or bool(e["options"]) or bool(counter)
 
 
+def display(e):
+    """The name the planner sees and may copy as a requirement's "what"."""
+    return f"{e['label'][:80]} ({e['hint'][:60]})" if e.get("hint") else e["label"][:80]
+
+
+def plannable(e):
+    """Elements a requirement can name: fields, and buttons, which often open pickers for dates or counts."""
+    return is_field(e) or e["role"] == "button"
+
+
 def describe(e):
     text = f"{e['role']} {e['label'][:70]}"
+    if e.get("hint"):
+        text += f" ({e['hint'][:50]})"
     if is_field(e) and e["current"] != e["label"]:
         text += f" = {e['current'][:40] or '(empty)'}"
     if e["options"]:
@@ -165,7 +178,7 @@ def titled(title, name):
 
 
 def relevance(e, text):
-    s = len(words(f"{e['label']} {e['current']}") & words(text))
+    s = len(words(f"{e['label']} {e.get('hint', '')} {e['current']}") & words(text))
     date = month_day(text)
     return s + 5 if date and month_day(e["label"]) == date else s
 
@@ -241,6 +254,10 @@ class LayaPolicy:
 
     def pick(self, qid, candidates, state, instructions, text, limit=20, bonus=None, allow_none=False,
              top_tier=False, margin=1):
+        date = month_day(text)
+        dated = [e for e in candidates if date and month_day(e["label"]) == date]
+        if len(dated) == 1:
+            return dated[0], None  # An exact calendar match needs no model call; Laya confused adjacent days.
         ranked = shortlist(candidates, text, limit, bonus, top_tier, margin)
         if not ranked:
             return None
@@ -264,7 +281,7 @@ class LayaPolicy:
             self.frozen |= self.met
         elements = observed(page)
         if self.plan is None:
-            labels = list(dict.fromkeys(e["label"][:80] for e in elements if is_field(e)))
+            labels = list(dict.fromkeys(display(e) for e in elements if plannable(e)))
             self.plan, self.plan_meta = plan_goal(self.goal, labels)
         self.answers, self.questions, self.tokens = {}, {}, 0
         op, element, action, picked, kind, req, text = self.decide(page, elements)
@@ -308,8 +325,10 @@ class LayaPolicy:
 
         # 1. A typed query or an opened control offers new choices: take the one its requirement asks for.
         if last and last["kind"] in {"fill", "open"} and last["req"] is not None:
-            new = [e for e in clickable if e["node"] not in last["before"]]
             r = reqs[last["req"]]
+            new = [e for e in clickable if e["node"] not in last["before"]]
+            # Suggestions name the value; controls that appear beside them ("Clear", "Swap") do not.
+            new = [e for e in new if relevance(e, r["value"])]
             state = f"Requirement: {r['what']} = {r['value']}"
             picked = self.pick("option", new, state, f"Which option sets {r['what']} to {r['value']}?",
                                r["value"], allow_none=True)
@@ -326,6 +345,9 @@ class LayaPolicy:
                 self.search_added = True
 
         # 2. Requirements in the goal's order: map each to an observed element, then check its value.
+        if reqs and not any(plannable(e) for e in elements):
+            # Nothing to fill yet: the page is still loading or showing an interstitial. This costs no attempt.
+            return "WAIT", None, None, None, "wait", None, None
         self.refresh(page, elements, by_node)
         for i, r in enumerate(reqs):
             if i in self.met or i in self.skipped:
@@ -336,12 +358,25 @@ class LayaPolicy:
             e = by_node.get(self.fields.get(i))
             state = f"Requirement: {r['what']} = {r['value']}"
             if e is None:
-                picked = self.pick(f"set_{i}", clickable, state, f"Which element sets {r['what']} to {r['value']}?",
-                                   f"{r['what']} {r['value']}", allow_none=True)
+                # A control about this requirement that already displays its value ("Travellers and cabin
+                # class: 1 Adult, Economy") settles it. Both the name and the value must appear.
+                # Calendar days name a date too, but they are choices, not displays.
+                shown = [c for c in elements if plannable(c) and c["role"] not in TOGGLES and not month_day(c["label"])
+                         and words(c["label"]) & words(r["what"]) and words(c["label"]) & words(r["value"])
+                         and settled(r, {**c, "current": c["label"], "options": []})]
+                if shown:
+                    self.met.add(i)
+                    continue
+                about = f"{r['what']} {r['value']}"
+                options = [c for c in clickable if c["role"] not in TOGGLES or words(c["label"]) & words(about)]
+                options = [c for c in options if relevance(c, about)] or options
+                picked = self.pick(f"set_{i}", options, state, f"Which element sets {r['what']} to {r['value']}?",
+                                   about, allow_none=True)
                 if not picked:
                     # Often the page is mid-render. Wait (one attempt); the attempt limit skips it for good.
                     return "WAIT", None, None, None, "wait", i, None
-                return self.click(picked, "open" if is_field(picked[0]) else "pick", i)
+                # It may open a picker (a trip-type menu, a calendar); step 1 then chooses from what appears.
+                return self.click(picked, "open", i)
             if "fill" in e["actions"]:
                 return "TYPE_TEXT", e, e["actions"]["fill"], None, "fill", i, r["value"]
             if e["options"]:
@@ -382,7 +417,12 @@ class LayaPolicy:
             # values: two or more elements mentioning at least three of them (route, date, ...).
             wanted = set().union(*(words(r["value"]) for r in reqs)) if reqs else set()
             matching = [e for e in clickable if len(words(e["label"]) & wanted) >= min(3, len(wanted))]
-            if done["choice"] == "finish" or (searched and (done["choice"] == "results" or len(matching) >= 2)):
+            # Laya called a loading results skeleton "finish", so with stated values it needs rows naming them,
+            # or its verdict after the full wait for results.
+            laya_done = done["choice"] in {"finish", "results"}
+            if (not reqs and done["choice"] == "finish") or (
+                searched and (len(matching) >= 2 or (laya_done and self.waits >= MAX_RESULT_WAITS))
+            ):
                 return "DONE", None, None, None, "done", None, None
             if searched and self.waits < MAX_RESULT_WAITS:
                 return "WAIT", None, None, None, "wait", None, None
@@ -479,7 +519,8 @@ class LayaPolicy:
             # A dropdown offering exactly the requested value needs no model call.
             exact = [e for e in free if any(fold(option_label(o)) == fold(r["value"]) for o in e["options"])]
             # The planner names requirements by the observed field label when one sets them.
-            named = [e for e in free if fold(e["label"]) == fold(r["what"])]
+            named = [e for e in elements if plannable(e) and e["node"] not in taken
+                     and fold(r["what"]) in {fold(e["label"]), fold(display(e))}]
             if len(exact) == 1 or len(named) == 1:
                 self.fields[i] = (exact or named)[0]["node"]
                 taken.add(self.fields[i])
@@ -488,6 +529,12 @@ class LayaPolicy:
         free = [e for e in fields if e["node"] not in taken]
         if todo and free:
             self.assign(todo, free)
+        for i in todo:
+            # A checkbox is named by what it sets; one sharing no words with the requirement cannot hold it.
+            e = by_node.get(self.fields.get(i))
+            r = reqs[i]
+            if e and e["role"] in TOGGLES and not words(e["label"]) & words(f"{r['what']} {r['value']}"):
+                del self.fields[i]
         checks = {}
         for i in open_reqs:
             e = by_node.get(self.fields.get(i))
