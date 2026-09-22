@@ -6,7 +6,7 @@
 > This project is a clone of **[jev-ultrafast](https://github.com/browser-use/jev-ultrafast) by [Browser Use](https://github.com/browser-use)**, ported to make its decisions with **[Laya](https://github.com/mizorewww/laya-mlx)** running locally through MLX. The browser agent, DOM snapshot, executor, safety checks, inspector and most of the design are theirs. All credit for the original work goes to the jev-ultrafast authors. For how the agent works, see the [original repository](https://github.com/browser-use/jev-ultrafast).
 
 > [!IMPORTANT]
-> **Apple Silicon only.** Laya runs through [laya-mlx](https://github.com/mizorewww/laya-mlx), which needs an M-series Mac, macOS 14+, and Python 3.11+ (this project uses 3.12+).
+> **Apple Silicon only.** Laya runs through [laya-mlx](https://github.com/mizorewww/laya-mlx), which needs an M-series Mac, macOS 14+, and Python 3.11+ (this project uses 3.12+). If you're looking to run it on a different OS/machine, check the original [Laya](https://github.com/NandhaKishorM/laya)
 
 ## What is different from jev-ultrafast
 
