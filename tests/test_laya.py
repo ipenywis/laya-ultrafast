@@ -166,6 +166,22 @@ def test_local_text_model_needs_no_key_but_remote_does(monkeypatch):
         model.field_text({"goal": "Fly from Zurich"})
 
 
+def test_text_model_defaults_match_documented_openrouter(monkeypatch):
+    monkeypatch.delenv("TEXT_MODEL_BASE_URL", raising=False)
+    monkeypatch.delenv("TEXT_MODEL", raising=False)
+    monkeypatch.setenv("TEXT_MODEL_API_KEY", "test")
+    post = Mock(return_value={"choices": [{"message": {"content": '{"text":"Zurich"}'}}]})
+    monkeypatch.setattr(model, "post_json", post)
+
+    assert model.field_text({"goal": "Fly from Zurich"})[0] == "Zurich"
+    assert post.call_args.args[0] == "https://openrouter.ai/api/v1/chat/completions"
+    assert post.call_args.args[2]["model"] == "inception/mercury-2.5"
+
+    from laya_ultrafast import demo
+
+    assert demo.response_state()["text_model"] == "inception/mercury-2.5"
+
+
 def test_agent_types_the_planned_value_without_the_text_helper(monkeypatch):
     helper = Mock()
     monkeypatch.setattr(loop, "field_text", helper)

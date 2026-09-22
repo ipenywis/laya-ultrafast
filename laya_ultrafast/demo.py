@@ -44,7 +44,7 @@ def response_state():
     )
     return {
         **state,
-        "text_model": os.environ.get("TEXT_MODEL", "deepseek-chat"),
+        "text_model": os.environ.get("TEXT_MODEL", "inception/mercury-2.5"),
         "decision_model": decision_model,
         "max_steps": MAX_STEPS,
     }
