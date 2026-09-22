@@ -164,11 +164,11 @@ def local_endpoint(base):
 
 def chat_json(system, context):
     """One JSON-mode call to the OpenAI-compatible text model. Local servers need no key."""
-    base = os.environ.get("TEXT_MODEL_BASE_URL", "https://api.deepseek.com/v1").rstrip("/")
+    base = os.environ.get("TEXT_MODEL_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
     key = os.environ.get("TEXT_MODEL_API_KEY")
     if not key and not local_endpoint(base):
         raise ValueError("The text model needs TEXT_MODEL_API_KEY; no text is hardcoded or guessed by the executor.")
-    model = os.environ.get("TEXT_MODEL", "deepseek-chat")
+    model = os.environ.get("TEXT_MODEL", "inception/mercury-2.5")
     no_reasoning = os.environ.get("TEXT_MODEL_REASONING") == "none"
     if local_endpoint(base):
         # Ollama, LM Studio and mlx_lm speak the plain OpenAI dialect.
