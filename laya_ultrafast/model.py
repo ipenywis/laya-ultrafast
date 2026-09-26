@@ -8,7 +8,38 @@ from urllib.parse import urlparse
 
 import httpx
 
+from .adapter import (
+    CLIModelAdapter,
+    ModelProvider,
+    TemporaryLocalAdapter,
+    create_text_planning_endpoint,
+    extract_json_object,
+    find_best_model_match,
+    get_model_provider,
+    run_cli_chat,
+)
 from .questions import GOAL_PLAN, NEXT_ACTION, TARGET, TEXT_VALUE
+
+__all__ = [
+    "CLIModelAdapter",
+    "ModelProvider",
+    "TemporaryLocalAdapter",
+    "action_space",
+    "chat_json",
+    "choose",
+    "create_text_planning_endpoint",
+    "extract_json_object",
+    "field_context",
+    "field_text",
+    "find_best_model_match",
+    "get_model_provider",
+    "local_endpoint",
+    "parse_plan",
+    "plan_goal",
+    "post_json",
+    "run_cli_chat",
+    "validate_choice",
+]
 
 CLIENT = httpx.Client(http2=True, timeout=25)
 
@@ -163,7 +194,11 @@ def local_endpoint(base):
 
 
 def chat_json(system, context):
-    """One JSON-mode call to the OpenAI-compatible text model. Local servers need no key."""
+    """One JSON-mode call to the OpenAI-compatible text model or local CLI adapter."""
+    adapter = CLIModelAdapter.from_env()
+    if adapter:
+        return adapter.chat(system, context)
+
     base = os.environ.get("TEXT_MODEL_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
     key = os.environ.get("TEXT_MODEL_API_KEY")
     if not key and not local_endpoint(base):
